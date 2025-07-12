@@ -89,9 +89,9 @@ export default function ProductsPage() {
     return (
       <div className="min-h-screen">
         <Header />
-        <div className="container mx-auto px-4 py-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {[...Array(8)].map((_, i) => (
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16 sm:mt-20">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-6">
+            {[...Array(10)].map((_, i) => (
               <div key={i} className="bg-gray-200 animate-pulse rounded-lg h-80"></div>
             ))}
           </div>
@@ -104,18 +104,18 @@ export default function ProductsPage() {
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="container mx-auto px-4 py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 mt-16 sm:mt-20">
+        <div className="flex flex-col xl:flex-row gap-6 lg:gap-8">
           {/* Filters Sidebar */}
-          <div className={`lg:w-64 ${showFilters ? "block" : "hidden lg:block"}`}>
-            <div className="bg-white p-6 rounded-lg shadow-md sticky top-24">
+          <div className={`xl:w-64 ${showFilters ? "block" : "hidden xl:block"}`}>
+            <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md sticky top-24">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-green-800">Filters</h3>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={resetFilters}
-                  className="text-green-600 hover:text-green-800"
+                  className="text-green-600 hover:text-green-800 text-sm"
                 >
                   Reset
                 </Button>
@@ -128,7 +128,7 @@ export default function ProductsPage() {
                   value={filters.category}
                   onValueChange={(value) => setFilters((prev) => ({ ...prev, category: value }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -162,7 +162,7 @@ export default function ProductsPage() {
                   value={filters.weight}
                   onValueChange={(value) => setFilters((prev) => ({ ...prev, weight: value }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -181,16 +181,20 @@ export default function ProductsPage() {
           <div className="flex-1">
             {/* Header with Sort and Filter Toggle */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-              <h1 className="text-2xl font-bold text-green-800">Products ({filteredProducts.length})</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-green-800">Products ({filteredProducts.length})</h1>
 
-              <div className="flex items-center gap-4">
-                <Button variant="outline" onClick={() => setShowFilters(!showFilters)} className="lg:hidden">
+              <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowFilters(!showFilters)}
+                  className="xl:hidden flex-1 sm:flex-none"
+                >
                   <Filter className="w-4 h-4 mr-2" />
                   Filters
                 </Button>
 
                 <Select value={sortBy} onValueChange={setSortBy}>
-                  <SelectTrigger className="w-48">
+                  <SelectTrigger className="w-full sm:w-48">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -204,15 +208,15 @@ export default function ProductsPage() {
 
             {/* Products Grid */}
             {filteredProducts.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {filteredProducts.map((product) => (
                   <ProductCard key={product.id} product={product} onQuickView={() => setSelectedProduct(product)} />
                 ))}
               </div>
             ) : (
               <div className="text-center py-12">
-                <p className="text-gray-500 text-lg">No products found matching your criteria.</p>
-                <Button onClick={resetFilters} className="mt-4">
+                <p className="text-gray-500 text-lg mb-4">No products found matching your criteria.</p>
+                <Button onClick={resetFilters} className="bg-green-600 hover:bg-green-700">
                   Reset Filters
                 </Button>
               </div>
