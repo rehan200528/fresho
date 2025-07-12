@@ -1,197 +1,197 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
+import { usePathname } from "next/navigation"
+import { Menu, X, ShoppingCart, User, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
-import { Menu, ShoppingCart, User, Home, Package, Phone } from "lucide-react"
 import { useCart } from "@/contexts/cart-context"
 import { useAuth } from "@/contexts/auth-context"
-import AuthModal from "./auth-modal"
+import AuthModal from "@/components/auth-modal"
 
 export default function Header() {
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const { items } = useCart()
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isScrolled, setIsScrolled] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const pathname = usePathname()
+  const { getCartCount } = useCart()
   const { user, logout } = useAuth()
 
-  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 0)
+    }
+    window.addEventListener("scroll", handleScroll)
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
 
-  const navigationItems = [
-    { href: "/", label: "Home", icon: Home },
-    { href: "/products", label: "Products", icon: Package },
-    { href: "/contact", label: "Contact", icon: Phone },
+  const navigation = [
+    { name: "Home", href: "/" },
+    { name: "Products", href: "/products" },
+    { name: "About", href: "/about" },
+    { name: "Contact", href: "/contact" },
   ]
 
-  const handleAuthClick = () => {
-    if (user) {
-      logout()
-    } else {
-      setIsAuthModalOpen(true)
+  const isActive = (href: string) => {
+    if (href === "/") {
+      return pathname === href
     }
+    return pathname.startsWith(href)
   }
 
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <header
+        className={`fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 transition-shadow ${isScrolled ? "shadow-md" : ""}`}
+      >
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 sm:h-20 items-center justify-between">
-            {/* Logo */}
-            <Link href="/" className="flex items-center space-x-2">
-              <div className="relative w-8 h-8 sm:w-10 sm:h-10">
-                <Image src="/placeholder-logo.svg" alt="Freshco Logo" fill className="object-contain" />
+          <div className="flex items-center justify-between h-16 sm:h-18 lg:h-20">
+            {/* Logo - Responsive sizing */}
+            <Link href="/" className="flex items-center space-x-2 sm:space-x-4">
+              <div className="relative w-24 h-10 sm:w-28 sm:h-12 lg:w-32 lg:h-16">
+                <Image
+                  src="https://i.ibb.co/3mqR8CP4/logof.png"
+                  alt="Freshco Logo"
+                  fill
+                  className="object-contain"
+                  priority
+                />
               </div>
-              <span className="text-xl sm:text-2xl font-bold text-green-600">Freshco</span>
             </Link>
 
             {/* Desktop Navigation */}
-            <nav className="hidden lg:flex items-center space-x-8">
-              {navigationItems.map((item) => (
+            <nav className="hidden lg:flex items-center space-x-6 xl:space-x-8">
+              {navigation.map((item) => (
                 <Link
-                  key={item.href}
+                  key={item.name}
                   href={item.href}
-                  className="text-gray-700 hover:text-green-600 font-medium transition-colors duration-200"
+                  className={`text-sm xl:text-base font-medium transition-colors hover:text-green-600 ${
+                    isActive(item.href) ? "text-green-600" : "text-gray-700"
+                  }`}
                 >
-                  {item.label}
+                  {item.name}
                 </Link>
               ))}
-              <Link
-                href="/about"
-                className="text-gray-700 hover:text-green-600 font-medium transition-colors duration-200"
-              >
-                About
-              </Link>
-              <Link
-                href="/templates"
-                className="text-gray-700 hover:text-green-600 font-medium transition-colors duration-200"
-              >
-                Templates
-              </Link>
             </nav>
 
             {/* Desktop Actions */}
-            <div className="hidden lg:flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleAuthClick}
-                className="text-gray-700 hover:text-green-600"
-              >
-                <User className="w-4 h-4 mr-2" />
-                {user ? `Hi, ${user.name.split(" ")[0]}` : "Sign In"}
-              </Button>
-              <Link href="/cart">
-                <Button variant="ghost" size="sm" className="relative">
-                  <ShoppingCart className="w-4 h-4" />
-                  {totalItems > 0 && (
-                    <Badge
-                      variant="destructive"
-                      className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
-                    >
-                      {totalItems}
-                    </Badge>
-                  )}
+            <div className="hidden lg:flex items-center space-x-3 xl:space-x-4">
+              {user ? (
+                <div className="flex items-center space-x-2 xl:space-x-3">
+                  <Link href="/cart">
+                    <Button variant="ghost" size="sm" className="relative text-gray-600 hover:text-green-600">
+                      <ShoppingCart className="w-4 h-4 xl:w-5 xl:h-5" />
+                      {getCartCount() > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                          {getCartCount()}
+                        </span>
+                      )}
+                    </Button>
+                  </Link>
+                  <div className="flex items-center space-x-2">
+                    <User className="w-4 h-4 xl:w-5 xl:h-5 text-gray-600" />
+                    <span className="text-sm xl:text-base text-gray-600 max-w-24 truncate">{user.name}</span>
+                    <Button variant="ghost" size="sm" onClick={logout} className="text-gray-600 hover:text-red-600">
+                      <LogOut className="w-4 h-4 xl:w-5 xl:h-5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAuthModal(true)}
+                  className="text-gray-600 hover:text-green-600 flex items-center space-x-1"
+                >
+                  <User className="w-4 h-4 xl:w-5 xl:h-5" />
+                  <span className="text-sm xl:text-base">Login</span>
                 </Button>
-              </Link>
+              )}
             </div>
 
-            {/* Mobile Menu Button */}
-            <div className="lg:hidden flex items-center space-x-2">
-              <Link href="/cart">
-                <Button variant="ghost" size="sm" className="relative">
-                  <ShoppingCart className="w-4 h-4" />
-                  {totalItems > 0 && (
-                    <Badge
-                      variant="destructive"
-                      className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
-                    >
-                      {totalItems}
-                    </Badge>
-                  )}
-                </Button>
-              </Link>
-              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <Menu className="w-5 h-5" />
+            {/* Mobile/Tablet Actions */}
+            <div className="flex lg:hidden items-center space-x-2">
+              {user && (
+                <Link href="/cart">
+                  <Button variant="ghost" size="sm" className="relative text-gray-600 hover:text-green-600">
+                    <ShoppingCart className="w-5 h-5" />
+                    {getCartCount() > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                        {getCartCount()}
+                      </span>
+                    )}
                   </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[280px] sm:w-[350px]">
-                  <div className="flex flex-col h-full">
-                    {/* Mobile Header */}
-                    <div className="flex items-center space-x-2 pb-6 border-b">
-                      <div className="relative w-8 h-8">
-                        <Image src="/placeholder-logo.svg" alt="Freshco Logo" fill className="object-contain" />
-                      </div>
-                      <span className="text-xl font-bold text-green-600">Freshco</span>
-                    </div>
+                </Link>
+              )}
 
-                    {/* User Section */}
-                    <div className="py-6 border-b">
-                      <Button
-                        variant="ghost"
-                        onClick={handleAuthClick}
-                        className="w-full justify-start text-left p-0 h-auto"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-green-600" />
-                          </div>
-                          <div className="flex-1">
-                            {user ? (
-                              <div>
-                                <p className="font-medium text-gray-900">{user.name}</p>
-                                <p className="text-sm text-gray-500">Tap to logout</p>
-                              </div>
-                            ) : (
-                              <div>
-                                <p className="font-medium text-gray-900">Sign In</p>
-                                <p className="text-sm text-gray-500">Access your account</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </Button>
-                    </div>
-
-                    {/* Mobile Navigation - Only Home, Products, Contact */}
-                    <nav className="flex-1 py-6">
-                      <div className="space-y-1">
-                        {navigationItems.map((item) => {
-                          const IconComponent = item.icon
-                          return (
-                            <Link
-                              key={item.href}
-                              href={item.href}
-                              onClick={() => setIsMobileMenuOpen(false)}
-                              className="flex items-center space-x-3 px-3 py-4 rounded-lg text-gray-700 hover:bg-green-50 hover:text-green-600 transition-colors duration-200"
-                            >
-                              <IconComponent className="w-5 h-5" />
-                              <span className="font-medium">{item.label}</span>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    </nav>
-
-                    {/* Mobile Footer */}
-                    <div className="pt-6 border-t">
-                      <div className="text-center">
-                        <p className="text-sm text-gray-500">Freshco - Premium Natural Products</p>
-                        <p className="text-xs text-gray-400 mt-1">© 2024 All rights reserved</p>
-                      </div>
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
+              {/* Mobile Menu Button */}
+              <Button variant="ghost" size="sm" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+                {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </Button>
             </div>
           </div>
+
+          {/* Mobile Menu */}
+          {isMenuOpen && (
+            <div className="lg:hidden border-t bg-white shadow-lg">
+              <div className="px-2 pt-2 pb-3 space-y-1">
+                {navigation.map((item) => (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={`block px-3 py-3 text-base font-medium transition-colors hover:text-green-600 hover:bg-green-50 rounded-md ${
+                      isActive(item.href) ? "text-green-600 bg-green-50" : "text-gray-700"
+                    }`}
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    {item.name}
+                  </Link>
+                ))}
+
+                <div className="border-t pt-3 mt-3">
+                  {user ? (
+                    <div className="space-y-2">
+                      <div className="px-3 py-2 text-sm text-gray-600 bg-gray-50 rounded-md">Hi, {user.name}</div>
+                      <Link
+                        href="/cart"
+                        className="flex items-center px-3 py-3 text-base font-medium text-gray-700 hover:text-green-600 hover:bg-green-50 rounded-md"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        <ShoppingCart className="w-5 h-5 mr-3" />
+                        Cart ({getCartCount()})
+                      </Link>
+                      <button
+                        onClick={() => {
+                          logout()
+                          setIsMenuOpen(false)
+                        }}
+                        className="flex items-center px-3 py-3 text-base font-medium text-gray-700 hover:text-red-600 hover:bg-red-50 w-full text-left rounded-md"
+                      >
+                        <LogOut className="w-5 h-5 mr-3" />
+                        Logout
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setShowAuthModal(true)
+                        setIsMenuOpen(false)
+                      }}
+                      className="flex items-center px-3 py-3 text-base font-medium text-gray-700 hover:text-green-600 hover:bg-green-50 w-full text-left rounded-md"
+                    >
+                      <User className="w-5 h-5 mr-3" />
+                      Login
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
-      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </>
   )
 }

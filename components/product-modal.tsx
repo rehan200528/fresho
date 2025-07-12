@@ -1,184 +1,202 @@
 "use client"
 
-import Image from "next/image"
+import type React from "react"
+
+import { useState } from "react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Star, ShoppingCart, Heart, X } from "lucide-react"
-import { useState } from "react"
-
-interface Product {
-  id: number
-  name: string
-  price: number
-  originalPrice: number
-  image: string
-  rating: number
-  reviews: number
-  category: string
-  description: string
-  features: string[]
-  inStock: boolean
-  discount: number
-}
+import { ShoppingCart, Star, Plus, Minus, X } from "lucide-react"
+import Image from "next/image"
+import { useCart } from "@/contexts/cart-context"
+import { useAuth } from "@/contexts/auth-context"
+import { useToast } from "@/hooks/use-toast"
+import type { Product } from "@/types"
 
 interface ProductModalProps {
   product: Product
   isOpen: boolean
   onClose: () => void
-  onAddToCart: (product: Product) => void
 }
 
-export default function ProductModal({ product, isOpen, onClose, onAddToCart }: ProductModalProps) {
+export default function ProductModal({ product, isOpen, onClose }: ProductModalProps) {
   const [quantity, setQuantity] = useState(1)
-  const [isFavorite, setIsFavorite] = useState(false)
-
-  const renderStars = (rating: number) => {
-    return Array.from({ length: 5 }, (_, i) => (
-      <Star
-        key={i}
-        className={`w-4 h-4 ${i < Math.floor(rating) ? "text-yellow-400 fill-current" : "text-gray-300"}`}
-      />
-    ))
-  }
+  const { addToCart } = useCart()
+  const { user } = useAuth()
+  const { toast } = useToast()
 
   const handleAddToCart = () => {
-    for (let i = 0; i < quantity; i++) {
-      onAddToCart(product)
+    if (!user) {
+      toast({
+        title: "Login Required",
+        description: "Please login to add items to cart",
+        variant: "destructive",
+      })
+      return
     }
+
+    for (let i = 0; i < quantity; i++) {
+      addToCart(product)
+    }
+
+    toast({
+      title: "Added to Cart",
+      description: `${quantity} x ${product.name} added to your cart`,
+    })
+
     onClose()
   }
 
+  const incrementQuantity = () => {
+    setQuantity((prev) => prev + 1)
+  }
+
+  const decrementQuantity = () => {
+    setQuantity((prev) => Math.max(1, prev - 1))
+  }
+
+  const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number.parseInt(e.target.value) || 1
+    setQuantity(Math.max(1, value))
+  }
+
+  // Generate random rating between 4.0 and 5.0
+  const rating = (4.0 + Math.random()).toFixed(1)
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
-        <div className="grid md:grid-cols-2 gap-0">
+      <DialogContent className="sm:max-w-2xl max-w-[95vw] bg-white p-0 max-h-[95vh] overflow-y-auto">
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 z-10 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow"
+        >
+          <X className="w-4 h-4 text-gray-500" />
+        </button>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 sm:p-6">
           {/* Product Image */}
-          <div className="relative h-64 md:h-full min-h-[400px]">
-            <Image src={product.image || "/placeholder.svg"} alt={product.name} fill className="object-cover" />
-
-            {/* Badges */}
-            <div className="absolute top-4 left-4 flex flex-col gap-2">
-              {product.discount > 0 && (
-                <Badge variant="destructive" className="bg-red-500">
-                  {product.discount}% OFF
-                </Badge>
-              )}
-              {!product.inStock && (
-                <Badge variant="secondary" className="bg-gray-500 text-white">
-                  Out of Stock
-                </Badge>
-              )}
+          <div className="relative">
+            <div className="aspect-square bg-gray-50 rounded-lg overflow-hidden">
+              <Image
+                src={product.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&h=500&fit=crop"}
+                alt={product.name}
+                width={500}
+                height={500}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.src = "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&h=500&fit=crop"
+                }}
+              />
             </div>
-
-            {/* Close Button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute top-4 right-4 w-8 h-8 p-0 bg-white/80 hover:bg-white"
-              onClick={onClose}
-            >
-              <X className="w-4 h-4" />
-            </Button>
+            {/* Category Badge */}
+            <Badge className="absolute top-3 left-3 bg-green-100 text-green-800 hover:bg-green-100">
+              {product.category}
+            </Badge>
           </div>
 
           {/* Product Details */}
-          <div className="p-6 md:p-8 space-y-6">
-            {/* Category */}
-            <Badge variant="outline" className="text-xs">
-              {product.category}
-            </Badge>
-
-            {/* Product Name */}
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">{product.name}</h2>
-
-            {/* Rating */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center">{renderStars(product.rating)}</div>
-              <span className="text-sm text-gray-600">
-                {product.rating} ({product.reviews} reviews)
-              </span>
-            </div>
-
-            {/* Price */}
-            <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold text-green-600">₹{product.price}</span>
-              {product.originalPrice > product.price && (
-                <span className="text-lg text-gray-500 line-through">₹{product.originalPrice}</span>
-              )}
-            </div>
-
-            {/* Description */}
-            <p className="text-gray-600 leading-relaxed">{product.description}</p>
-
-            {/* Features */}
+          <div className="flex flex-col space-y-4 sm:space-y-6">
             <div>
-              <h4 className="font-semibold text-gray-900 mb-3">Key Features:</h4>
-              <ul className="space-y-2">
-                {product.features.map((feature, index) => (
-                  <li key={index} className="flex items-center text-sm text-gray-600">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full mr-3"></div>
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-            </div>
+              <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mb-2 sm:mb-3">{product.name}</h2>
 
-            {/* Quantity Selector */}
-            <div className="flex items-center gap-4">
-              <span className="font-medium text-gray-900">Quantity:</span>
-              <div className="flex items-center border rounded-lg">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-10 w-10 p-0"
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  disabled={quantity <= 1}
-                >
-                  -
-                </Button>
-                <span className="w-12 text-center font-medium">{quantity}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-10 w-10 p-0"
-                  onClick={() => setQuantity(quantity + 1)}
-                  disabled={!product.inStock}
-                >
-                  +
-                </Button>
+              {/* Rating */}
+              <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                <div className="flex items-center gap-1">
+                  {[...Array(4)].map((_, i) => (
+                    <Star key={i} className="w-4 h-4 sm:w-5 sm:h-5 fill-yellow-400 text-yellow-400" />
+                  ))}
+                  <Star className="w-4 h-4 sm:w-5 sm:h-5 fill-gray-200 text-gray-200" />
+                </div>
+                <span className="text-sm sm:text-base text-gray-600">({rating})</span>
+              </div>
+
+              {/* Price */}
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <span className="text-2xl sm:text-3xl font-bold text-green-600">₹{product.price}</span>
+                {product.originalPrice && (
+                  <span className="text-lg sm:text-xl text-gray-500 line-through">₹{product.originalPrice}</span>
+                )}
+                <span className="text-sm sm:text-base text-gray-500">/ {product.weight}</span>
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-4">
-              <Button
-                onClick={handleAddToCart}
-                disabled={!product.inStock}
-                className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-300"
-                size="lg"
-              >
-                <ShoppingCart className="w-5 h-5 mr-2" />
-                {product.inStock ? `Add ${quantity} to Cart` : "Out of Stock"}
-              </Button>
+            {/* Description */}
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-800">Product Details</h3>
+              <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
+                Premium quality {product.category} sourced directly from certified organic farms. Rich in nutrients and
+                free from harmful chemicals, this product ensures the highest standards of quality and freshness for
+                your healthy lifestyle.
+              </p>
 
-              <Button
-                variant="outline"
-                size="lg"
-                className="w-12 h-12 p-0 bg-transparent"
-                onClick={() => setIsFavorite(!isFavorite)}
-              >
-                <Heart className={`w-5 h-5 ${isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
-              </Button>
+              {/* Features */}
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-gray-600">100% Organic</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-gray-600">Fresh Quality</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-gray-600">No Chemicals</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-gray-600">Farm Fresh</span>
+                </div>
+              </div>
             </div>
 
-            {/* Stock Status */}
-            <div className="text-sm">
-              {product.inStock ? (
-                <span className="text-green-600 font-medium">✓ In Stock</span>
-              ) : (
-                <span className="text-red-600 font-medium">✗ Currently Out of Stock</span>
-              )}
+            {/* Quantity Selector */}
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-800">Quantity</h3>
+              <div className="flex items-center space-x-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={decrementQuantity}
+                  className="h-10 w-10 p-0 rounded-full bg-transparent"
+                >
+                  <Minus className="w-4 h-4" />
+                </Button>
+                <Input
+                  type="number"
+                  value={quantity}
+                  onChange={handleQuantityChange}
+                  className="w-20 text-center h-10"
+                  min="1"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={incrementQuantity}
+                  className="h-10 w-10 p-0 rounded-full bg-transparent"
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+              <p className="text-sm text-gray-500">Total: ₹{(product.price * quantity).toFixed(2)}</p>
+            </div>
+
+            {/* Add to Cart Button */}
+            <Button
+              onClick={handleAddToCart}
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-3 sm:py-4 rounded-lg text-base sm:text-lg font-medium"
+            >
+              <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+              Add {quantity} to Cart
+            </Button>
+
+            {/* Additional Info */}
+            <div className="text-xs sm:text-sm text-gray-500 space-y-1">
+              <p>✓ Free delivery on orders above ₹500</p>
+              <p>✓ Fresh guarantee or money back</p>
+              <p>✓ Sourced directly from organic farms</p>
             </div>
           </div>
         </div>
