@@ -1,298 +1,336 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import type React from "react"
+import { createContext, useContext, useState, useEffect } from "react"
 
 interface User {
   id: string
   name: string
   email: string
+  mobile?: string
   isVerified: boolean
 }
 
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string) => Promise<void>
-  register: (name: string, email: string, password: string) => Promise<void>
+  register: (name: string, email: string, mobile: string, password: string) => Promise<void>
+  logout: () => void
   verifyOTP: (email: string, otp: string) => Promise<void>
   resendOTP: (email: string) => Promise<void>
+  sendMobileOTP: (mobile: string) => Promise<void>
+  verifyMobileOTP: (mobile: string, otp: string) => Promise<void>
   forgotPassword: (email: string) => Promise<void>
   resetPassword: (email: string, otp: string, newPassword: string) => Promise<void>
-  logout: () => void
-  sendOTP: (email: string, type: "register" | "reset") => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Mock user database - in production, this would be a real database
-const mockUsers: Array<{
-  id: string
-  name: string
-  email: string
-  password: string
-  isVerified: boolean
-}> = [
+// Mock user database
+const mockUsers: Array<User & { password: string; pendingVerification?: boolean }> = [
   {
     id: "1",
     name: "Demo User",
     email: "demo@freshco.com",
+    mobile: "9876543210",
     password: "demo123",
     isVerified: true,
   },
 ]
 
-// OTP storage - in production, this would be Redis or database
-const otpStorage: { [key: string]: { otp: string; expires: number; type: "register" | "reset" } } = {}
+// Mock OTP storage
+const mockOTPs: Record<string, { otp: string; expires: number; type: "email" | "mobile" | "reset" }> = {}
 
-// Pending registrations - in production, this would be database
-const pendingRegistrations: { [key: string]: { name: string; email: string; password: string } } = {}
+// Generate random OTP
+const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString()
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+// Mock email sending function
+const sendEmailOTP = async (email: string, otp: string, type: "verification" | "reset" = "verification") => {
+  // Simulate email sending delay
+  await new Promise((resolve) => setTimeout(resolve, 1000))
+
+  // Log OTP for demo purposes (in production, this would send actual email)
+  console.log(`📧 Email OTP for ${email}: ${otp} (${type})`)
+
+  // For demo purposes, show a notification that email was "sent"
+  if (typeof window !== "undefined") {
+    // Create a temporary notification
+    const notification = document.createElement("div")
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #10b981;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      z-index: 10000;
+      font-family: system-ui;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `
+    notification.textContent = `📧 Email OTP sent to ${email}: ${otp}`
+    document.body.appendChild(notification)
+
+    setTimeout(() => {
+      document.body.removeChild(notification)
+    }, 5000)
+  }
+
+  return Promise.resolve()
+}
+
+// Mock SMS sending function
+const sendSMSOTP = async (mobile: string, otp: string) => {
+  // Simulate SMS sending delay
+  await new Promise((resolve) => setTimeout(resolve, 800))
+
+  // Log OTP for demo purposes (in production, this would send actual SMS)
+  console.log(`📱 SMS OTP for +91${mobile}: ${otp}`)
+
+  // For demo purposes, show a notification that SMS was "sent"
+  if (typeof window !== "undefined") {
+    // Create a temporary notification
+    const notification = document.createElement("div")
+    notification.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      background: #3b82f6;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      z-index: 10000;
+      font-family: system-ui;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `
+    notification.textContent = `📱 SMS OTP sent to +91${mobile}: ${otp}`
+    document.body.appendChild(notification)
+
+    setTimeout(() => {
+      document.body.removeChild(notification)
+    }, 5000)
+  }
+
+  return Promise.resolve()
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
 
-  // Load user from localStorage on mount
   useEffect(() => {
-    const savedUser = localStorage.getItem("freshco-user")
-    if (savedUser) {
+    // Check for stored user session
+    const storedUser = localStorage.getItem("freshco_user")
+    if (storedUser) {
       try {
-        setUser(JSON.parse(savedUser))
+        setUser(JSON.parse(storedUser))
       } catch (error) {
-        console.error("Error parsing saved user:", error)
-        localStorage.removeItem("freshco-user")
+        console.error("Error parsing stored user:", error)
+        localStorage.removeItem("freshco_user")
       }
     }
   }, [])
 
-  const generateOTP = (): string => {
-    return Math.floor(100000 + Math.random() * 900000).toString()
-  }
-
-  const sendEmailOTP = async (email: string, otp: string, type: "register" | "reset"): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      // Check if Email service is available
-      if (typeof window !== "undefined" && (window as any).Email) {
-        const subject = type === "register" ? "Freshco - Email Verification Code" : "Freshco - Password Reset Code"
-
-        const body =
-          type === "register"
-            ? `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #16a34a;">Welcome to Freshco!</h1>
-              </div>
-              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                <h2 style="color: #333; margin-bottom: 15px;">Email Verification Required</h2>
-                <p style="color: #666; margin-bottom: 20px;">Thank you for joining Freshco! Please use the verification code below to complete your registration:</p>
-                <div style="text-align: center; margin: 30px 0;">
-                  <span style="background-color: #16a34a; color: white; padding: 15px 30px; font-size: 24px; font-weight: bold; border-radius: 8px; letter-spacing: 3px;">${otp}</span>
-                </div>
-                <p style="color: #666; font-size: 14px;">This code will expire in 10 minutes for security reasons.</p>
-              </div>
-              <p style="color: #666; font-size: 12px; text-align: center;">If you didn't request this verification, please ignore this email.</p>
-            </div>
-          `
-            : `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #dc2626;">Password Reset Request</h1>
-              </div>
-              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                <h2 style="color: #333; margin-bottom: 15px;">Reset Your Password</h2>
-                <p style="color: #666; margin-bottom: 20px;">You requested to reset your password. Please use the code below:</p>
-                <div style="text-align: center; margin: 30px 0;">
-                  <span style="background-color: #dc2626; color: white; padding: 15px 30px; font-size: 24px; font-weight: bold; border-radius: 8px; letter-spacing: 3px;">${otp}</span>
-                </div>
-                <p style="color: #666; font-size: 14px;">This code will expire in 10 minutes for security reasons.</p>
-              </div>
-              <p style="color: #666; font-size: 12px; text-align: center;">If you didn't request this reset, please ignore this email.</p>
-            </div>
-          `
-
-        console.log("Sending email with OTP:", otp, "to:", email)
-        ;(window as any).Email.send({
-          SecureToken: "c8e9ec37-1417-416d-a498-5f1ae5796083",
-          To: email,
-          From: "freshconatural.14@gmail.com",
-          Subject: subject,
-          Body: body,
-        })
-          .then((message: string) => {
-            console.log("Email send result:", message)
-            if (message === "OK") {
-              resolve()
-            } else {
-              reject(new Error(`Failed to send email: ${message}`))
-            }
-          })
-          .catch((error: any) => {
-            console.error("Email send error:", error)
-            reject(new Error("Failed to send email. Please check your internet connection."))
-          })
-      } else {
-        console.error("Email service not available")
-        reject(new Error("Email service not available. Please refresh the page and try again."))
-      }
-    })
-  }
-
-  const sendOTP = async (email: string, type: "register" | "reset"): Promise<void> => {
-    const otp = generateOTP()
-    const expires = Date.now() + 10 * 60 * 1000 // 10 minutes
-
-    try {
-      await sendEmailOTP(email, otp, type)
-      otpStorage[email] = { otp, expires, type }
-      console.log("OTP stored for", email, ":", otp) // For debugging - remove in production
-    } catch (error) {
-      console.error("Failed to send OTP:", error)
-      throw error
-    }
-  }
-
-  const login = async (email: string, password: string): Promise<void> => {
+  const login = async (email: string, password: string) => {
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
-    const existingUser = mockUsers.find((u) => u.email.toLowerCase() === email.toLowerCase())
-
-    if (!existingUser) {
-      throw new Error("No account found with this email address")
+    const foundUser = mockUsers.find((u) => u.email === email && u.password === password)
+    if (!foundUser) {
+      throw new Error("Invalid email or password")
+    }
+    if (!foundUser.isVerified) {
+      throw new Error("Please verify your account first")
     }
 
-    if (existingUser.password !== password) {
-      throw new Error("Invalid password. Please check your password and try again.")
+    const userSession = {
+      id: foundUser.id,
+      name: foundUser.name,
+      email: foundUser.email,
+      mobile: foundUser.mobile,
+      isVerified: foundUser.isVerified,
     }
 
-    if (!existingUser.isVerified) {
-      throw new Error("Please verify your email address before logging in")
-    }
-
-    const userData = {
-      id: existingUser.id,
-      name: existingUser.name,
-      email: existingUser.email,
-      isVerified: existingUser.isVerified,
-    }
-
-    setUser(userData)
-    localStorage.setItem("freshco-user", JSON.stringify(userData))
+    setUser(userSession)
+    localStorage.setItem("freshco_user", JSON.stringify(userSession))
   }
 
-  const register = async (name: string, email: string, password: string): Promise<void> => {
+  const register = async (name: string, email: string, mobile: string, password: string) => {
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 500))
 
     // Check if user already exists
-    const existingUser = mockUsers.find((u) => u.email.toLowerCase() === email.toLowerCase())
+    const existingUser = mockUsers.find((u) => u.email === email || u.mobile === mobile)
     if (existingUser) {
-      throw new Error("An account with this email already exists")
+      throw new Error("User with this email or mobile already exists")
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
+    // Validate inputs
+    if (!email.includes("@")) {
       throw new Error("Please enter a valid email address")
     }
 
-    // Validate password strength
+    if (!/^\d{10}$/.test(mobile)) {
+      throw new Error("Please enter a valid 10-digit mobile number")
+    }
+
     if (password.length < 6) {
       throw new Error("Password must be at least 6 characters long")
     }
 
-    // Store pending registration
-    pendingRegistrations[email] = { name, email, password }
+    // Create new user (not verified yet)
+    const newUser = {
+      id: Date.now().toString(),
+      name,
+      email,
+      mobile,
+      password,
+      isVerified: false,
+      pendingVerification: true,
+    }
 
-    // Send OTP
-    await sendOTP(email, "register")
+    mockUsers.push(newUser)
+
+    // Send email OTP
+    const emailOtp = generateOTP()
+    mockOTPs[email] = {
+      otp: emailOtp,
+      expires: Date.now() + 10 * 60 * 1000, // 10 minutes
+      type: "email",
+    }
+
+    await sendEmailOTP(email, emailOtp, "verification")
   }
 
-  const verifyOTP = async (email: string, otp: string): Promise<void> => {
+  const verifyOTP = async (email: string, otp: string) => {
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 500))
 
-    const storedOTP = otpStorage[email]
-    if (!storedOTP) {
-      throw new Error("No verification code found. Please request a new code.")
+    const storedOTP = mockOTPs[email]
+    if (!storedOTP || storedOTP.type !== "email") {
+      throw new Error("No OTP found for this email")
     }
 
     if (Date.now() > storedOTP.expires) {
-      delete otpStorage[email]
-      throw new Error("Verification code has expired. Please request a new code.")
+      delete mockOTPs[email]
+      throw new Error("OTP has expired")
     }
 
-    if (storedOTP.otp !== otp.trim()) {
-      throw new Error("Invalid verification code. Please check and try again.")
+    if (storedOTP.otp !== otp) {
+      throw new Error("Invalid OTP")
     }
 
-    if (storedOTP.type === "register") {
-      const pendingUser = pendingRegistrations[email]
-      if (!pendingUser) {
-        throw new Error("Registration session expired. Please start registration again.")
-      }
-
-      // Create new user
-      const newUser = {
-        id: Date.now().toString(),
-        name: pendingUser.name,
-        email: pendingUser.email,
-        password: pendingUser.password,
-        isVerified: true,
-      }
-
-      mockUsers.push(newUser)
-
-      const userData = {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        isVerified: true,
-      }
-
-      setUser(userData)
-      localStorage.setItem("freshco-user", JSON.stringify(userData))
-
-      // Clean up
-      delete otpStorage[email]
-      delete pendingRegistrations[email]
-    }
+    // Email verified, remove email OTP
+    delete mockOTPs[email]
   }
 
-  const resendOTP = async (email: string): Promise<void> => {
-    const storedOTP = otpStorage[email]
-    if (!storedOTP) {
-      throw new Error("No active verification session found")
+  const sendMobileOTP = async (mobile: string) => {
+    // Simulate API delay
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    const mobileOtp = generateOTP()
+    mockOTPs[mobile] = {
+      otp: mobileOtp,
+      expires: Date.now() + 10 * 60 * 1000, // 10 minutes
+      type: "mobile",
     }
 
-    await sendOTP(email, storedOTP.type)
+    await sendSMSOTP(mobile, mobileOtp)
   }
 
-  const forgotPassword = async (email: string): Promise<void> => {
+  const verifyMobileOTP = async (mobile: string, otp: string) => {
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 500))
 
-    const existingUser = mockUsers.find((u) => u.email.toLowerCase() === email.toLowerCase())
-    if (!existingUser) {
+    const storedOTP = mockOTPs[mobile]
+    if (!storedOTP || storedOTP.type !== "mobile") {
+      throw new Error("No OTP found for this mobile number")
+    }
+
+    if (Date.now() > storedOTP.expires) {
+      delete mockOTPs[mobile]
+      throw new Error("OTP has expired")
+    }
+
+    if (storedOTP.otp !== otp) {
+      throw new Error("Invalid OTP")
+    }
+
+    // Mobile verified, complete registration
+    const user = mockUsers.find((u) => u.mobile === mobile && u.pendingVerification)
+    if (!user) {
+      throw new Error("User not found")
+    }
+
+    // Mark user as verified and log them in
+    user.isVerified = true
+    user.pendingVerification = false
+
+    const userSession = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      mobile: user.mobile,
+      isVerified: user.isVerified,
+    }
+
+    setUser(userSession)
+    localStorage.setItem("freshco_user", JSON.stringify(userSession))
+
+    // Clean up OTPs
+    delete mockOTPs[mobile]
+  }
+
+  const resendOTP = async (email: string) => {
+    // Simulate API delay
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    const emailOtp = generateOTP()
+    mockOTPs[email] = {
+      otp: emailOtp,
+      expires: Date.now() + 10 * 60 * 1000, // 10 minutes
+      type: "email",
+    }
+
+    await sendEmailOTP(email, emailOtp, "verification")
+  }
+
+  const forgotPassword = async (email: string) => {
+    // Simulate API delay
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    const foundUser = mockUsers.find((u) => u.email === email)
+    if (!foundUser) {
       throw new Error("No account found with this email address")
     }
 
-    await sendOTP(email, "reset")
+    const resetOtp = generateOTP()
+    mockOTPs[email] = {
+      otp: resetOtp,
+      expires: Date.now() + 10 * 60 * 1000, // 10 minutes
+      type: "reset",
+    }
+
+    await sendEmailOTP(email, resetOtp, "reset")
   }
 
-  const resetPassword = async (email: string, otp: string, newPassword: string): Promise<void> => {
+  const resetPassword = async (email: string, otp: string, newPassword: string) => {
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 500))
 
-    const storedOTP = otpStorage[email]
+    const storedOTP = mockOTPs[email]
     if (!storedOTP || storedOTP.type !== "reset") {
-      throw new Error("Invalid password reset session")
+      throw new Error("No reset code found for this email")
     }
 
     if (Date.now() > storedOTP.expires) {
-      delete otpStorage[email]
-      throw new Error("Reset code has expired. Please request a new code.")
+      delete mockOTPs[email]
+      throw new Error("Reset code has expired")
     }
 
-    if (storedOTP.otp !== otp.trim()) {
-      throw new Error("Invalid reset code. Please check and try again.")
+    if (storedOTP.otp !== otp) {
+      throw new Error("Invalid reset code")
     }
 
     if (newPassword.length < 6) {
@@ -300,19 +338,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Update password
-    const userIndex = mockUsers.findIndex((u) => u.email.toLowerCase() === email.toLowerCase())
-    if (userIndex !== -1) {
-      mockUsers[userIndex].password = newPassword
+    const user = mockUsers.find((u) => u.email === email)
+    if (!user) {
+      throw new Error("User not found")
     }
 
-    // Clean up
-    delete otpStorage[email]
+    user.password = newPassword
+    delete mockOTPs[email]
   }
 
   const logout = () => {
     setUser(null)
-    localStorage.removeItem("freshco-user")
-    localStorage.removeItem("freshco-cart")
+    localStorage.removeItem("freshco_user")
   }
 
   return (
@@ -321,12 +358,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         login,
         register,
+        logout,
         verifyOTP,
         resendOTP,
+        sendMobileOTP,
+        verifyMobileOTP,
         forgotPassword,
         resetPassword,
-        logout,
-        sendOTP,
       }}
     >
       {children}

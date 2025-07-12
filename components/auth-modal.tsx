@@ -9,14 +9,27 @@ import { Label } from "@/components/ui/label"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
-import { Eye, EyeOff, CheckCircle, UserPlus, Mail, Lock, ArrowLeft, RefreshCw } from "lucide-react"
+import {
+  Eye,
+  EyeOff,
+  CheckCircle,
+  UserPlus,
+  Mail,
+  Lock,
+  ArrowLeft,
+  RefreshCw,
+  Shield,
+  Clock,
+  Phone,
+  Smartphone,
+} from "lucide-react"
 
 interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
-type AuthStep = "login" | "register" | "otp-verify" | "forgot-password" | "reset-password"
+type AuthStep = "login" | "register" | "otp-verify" | "mobile-otp-verify" | "forgot-password" | "reset-password"
 
 export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [currentStep, setCurrentStep] = useState<AuthStep>("login")
@@ -27,17 +40,21 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     firstName: "",
     lastName: "",
     email: "",
+    mobile: "",
     password: "",
     confirmPassword: "",
     otp: "",
+    mobileOtp: "",
     newPassword: "",
   })
   const [loading, setLoading] = useState(false)
   const [otpTimer, setOtpTimer] = useState(0)
-  const { login, register, verifyOTP, resendOTP, forgotPassword, resetPassword } = useAuth()
+  const [mobileOtpTimer, setMobileOtpTimer] = useState(0)
+  const { login, register, verifyOTP, resendOTP, forgotPassword, resetPassword, sendMobileOTP, verifyMobileOTP } =
+    useAuth()
   const { toast } = useToast()
 
-  // Timer for OTP resend
+  // Timer for Email OTP resend
   React.useEffect(() => {
     let interval: NodeJS.Timeout
     if (otpTimer > 0) {
@@ -47,6 +64,17 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     }
     return () => clearInterval(interval)
   }, [otpTimer])
+
+  // Timer for Mobile OTP resend
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (mobileOtpTimer > 0) {
+      interval = setInterval(() => {
+        setMobileOtpTimer((prev) => prev - 1)
+      }, 1000)
+    }
+    return () => clearInterval(interval)
+  }, [mobileOtpTimer])
 
   // Reset form when modal closes
   React.useEffect(() => {
@@ -68,13 +96,16 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
       firstName: "",
       lastName: "",
       email: "",
+      mobile: "",
       password: "",
       confirmPassword: "",
       otp: "",
+      mobileOtp: "",
       newPassword: "",
     })
     setCurrentStep("login")
     setOtpTimer(0)
+    setMobileOtpTimer(0)
     setLoading(false)
     setShowPassword(false)
     setShowConfirmPassword(false)
@@ -133,6 +164,24 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         return
       }
 
+      if (!formData.mobile.trim()) {
+        toast({
+          title: "Missing Mobile Number",
+          description: "Please enter your mobile number.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (!/^\d{10}$/.test(formData.mobile.trim())) {
+        toast({
+          title: "Invalid Mobile Number",
+          description: "Please enter a valid 10-digit mobile number.",
+          variant: "destructive",
+        })
+        return
+      }
+
       if (!formData.password) {
         toast({
           title: "Missing Password",
@@ -163,10 +212,11 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
       await register(
         `${formData.firstName.trim()} ${formData.lastName.trim()}`,
         formData.email.trim(),
+        formData.mobile.trim(),
         formData.password,
       )
 
-      // Move to OTP verification step
+      // Move to Email OTP verification step
       setCurrentStep("otp-verify")
       setOtpTimer(60)
 
@@ -174,10 +224,10 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         title: (
           <div className="flex items-center space-x-2">
             <Mail className="w-5 h-5 text-blue-500" />
-            <span>OTP Sent! 📧</span>
+            <span>Email OTP Sent! 📧</span>
           </div>
         ),
-        description: `Please check your email (${formData.email}) for the verification code.`,
+        description: `Please check your Gmail inbox (${formData.email}) for the verification code.`,
         className: "border-blue-200 bg-blue-50",
       })
     } catch (error) {
@@ -199,7 +249,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
       if (!formData.otp.trim()) {
         toast({
           title: "Missing Code",
-          description: "Please enter the verification code.",
+          description: "Please enter the email verification code.",
           variant: "destructive",
         })
         return
@@ -208,7 +258,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
       if (formData.otp.trim().length !== 6) {
         toast({
           title: "Invalid Code",
-          description: "Verification code must be 6 digits.",
+          description: "Email verification code must be 6 digits.",
           variant: "destructive",
         })
         return
@@ -216,21 +266,72 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
       await verifyOTP(formData.email, formData.otp)
 
+      // Send Mobile OTP after email verification
+      await sendMobileOTP(formData.mobile)
+      setCurrentStep("mobile-otp-verify")
+      setMobileOtpTimer(60)
+
+      toast({
+        title: (
+          <div className="flex items-center space-x-2">
+            <Smartphone className="w-5 h-5 text-green-500" />
+            <span>Mobile OTP Sent! 📱</span>
+          </div>
+        ),
+        description: `Please check your mobile (${formData.mobile}) for the verification code.`,
+        className: "border-green-200 bg-green-50",
+      })
+    } catch (error) {
+      toast({
+        title: "Email Verification Failed",
+        description: error instanceof Error ? error.message : "Please check your verification code.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleMobileOTPVerify = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+
+    try {
+      if (!formData.mobileOtp.trim()) {
+        toast({
+          title: "Missing Code",
+          description: "Please enter the mobile verification code.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (formData.mobileOtp.trim().length !== 6) {
+        toast({
+          title: "Invalid Code",
+          description: "Mobile verification code must be 6 digits.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      await verifyMobileOTP(formData.mobile, formData.mobileOtp)
+
       toast({
         title: (
           <div className="flex items-center space-x-2">
             <UserPlus className="w-5 h-5 text-green-500" />
-            <span>Account Created! 🚀</span>
+            <span>Account Created Successfully! 🚀</span>
           </div>
         ),
-        description: "Welcome to Freshco! Your account has been verified successfully.",
+        description: "Welcome to Freshco! Your account has been verified and you're now logged in.",
         className: "border-green-200 bg-green-50",
       })
       onClose()
     } catch (error) {
       toast({
-        title: "Verification Failed",
-        description: error instanceof Error ? error.message : "Please check your verification code.",
+        title: "Mobile Verification Failed",
+        description: error instanceof Error ? error.message : "Please check your mobile verification code.",
         variant: "destructive",
       })
     } finally {
@@ -260,10 +361,10 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         title: (
           <div className="flex items-center space-x-2">
             <Mail className="w-5 h-5 text-blue-500" />
-            <span>Reset Code Sent! 📧</span>
+            <span>Reset Code Sent to Gmail! 📧</span>
           </div>
         ),
-        description: `Please check your email (${formData.email}) for the password reset code.`,
+        description: `Please check your Gmail inbox (${formData.email}) for the password reset code.`,
         className: "border-blue-200 bg-blue-50",
       })
     } catch (error) {
@@ -351,16 +452,42 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         title: (
           <div className="flex items-center space-x-2">
             <RefreshCw className="w-5 h-5 text-blue-500" />
-            <span>OTP Resent! 📧</span>
+            <span>New Email OTP Sent! 📧</span>
           </div>
         ),
-        description: "A new verification code has been sent to your email.",
+        description: "A new verification code has been sent to your Gmail inbox.",
         className: "border-blue-200 bg-blue-50",
       })
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to resend OTP.",
+        description: error instanceof Error ? error.message : "Failed to resend email OTP.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResendMobileOTP = async () => {
+    setLoading(true)
+    try {
+      await sendMobileOTP(formData.mobile)
+      setMobileOtpTimer(60)
+      toast({
+        title: (
+          <div className="flex items-center space-x-2">
+            <RefreshCw className="w-5 h-5 text-green-500" />
+            <span>New Mobile OTP Sent! 📱</span>
+          </div>
+        ),
+        description: "A new verification code has been sent to your mobile number.",
+        className: "border-green-200 bg-green-50",
+      })
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to resend mobile OTP.",
         variant: "destructive",
       })
     } finally {
@@ -372,7 +499,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     switch (currentStep) {
       case "login":
         return (
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
             <div>
               <Label htmlFor="email" className="text-gray-700 font-medium text-sm">
                 Email Address *
@@ -385,7 +512,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 onChange={handleInputChange}
                 placeholder="Enter your email"
                 required
-                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500"
+                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 h-11 sm:h-12"
               />
             </div>
 
@@ -402,12 +529,12 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   onChange={handleInputChange}
                   placeholder="Enter your password"
                   required
-                  className="border-gray-300 focus:border-green-500 focus:ring-green-500 pr-10"
+                  className="border-gray-300 focus:border-green-500 focus:ring-green-500 pr-12 h-11 sm:h-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -416,7 +543,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium py-3 rounded-lg transition-all transform hover:scale-[1.02]"
+              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium py-3 sm:py-4 rounded-lg transition-all transform hover:scale-[1.02] h-12 sm:h-14"
               disabled={loading}
             >
               {loading ? (
@@ -443,138 +570,202 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
       case "register":
         return (
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="firstName" className="text-gray-700 font-medium text-sm">
-                  First Name *
-                </Label>
-                <Input
-                  id="firstName"
-                  name="firstName"
-                  value={formData.firstName}
-                  onChange={handleInputChange}
-                  placeholder="First name"
-                  required
-                  className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500"
-                />
-              </div>
-              <div>
-                <Label htmlFor="lastName" className="text-gray-700 font-medium text-sm">
-                  Last Name *
-                </Label>
-                <Input
-                  id="lastName"
-                  name="lastName"
-                  value={formData.lastName}
-                  onChange={handleInputChange}
-                  placeholder="Last name"
-                  required
-                  className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="email" className="text-gray-700 font-medium text-sm">
-                Email Address *
-              </Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                placeholder="Enter your email"
-                required
-                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="password" className="text-gray-700 font-medium text-sm">
-                Password *
-              </Label>
-              <div className="relative mt-1">
-                <Input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  placeholder="Create a password (min 6 characters)"
-                  required
-                  className="border-gray-300 focus:border-green-500 focus:ring-green-500 pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="confirmPassword" className="text-gray-700 font-medium text-sm">
-                Confirm Password *
-              </Label>
-              <div className="relative mt-1">
-                <Input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type={showConfirmPassword ? "text" : "password"}
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  placeholder="Confirm your password"
-                  required
-                  className="border-gray-300 focus:border-green-500 focus:ring-green-500 pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium py-3 rounded-lg transition-all transform hover:scale-[1.02]"
-              disabled={loading}
-            >
-              {loading ? (
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Creating Account...</span>
+          <div className="space-y-4 sm:space-y-5">
+            {/* Dual OTP Info Banner */}
+            <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <div className="flex space-x-1">
+                    <Mail className="w-4 h-4 text-blue-600 mt-0.5" />
+                    <Smartphone className="w-4 h-4 text-green-600 mt-0.5" />
+                  </div>
                 </div>
-              ) : (
-                <span>Create Account</span>
-              )}
-            </Button>
-          </form>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-blue-900 mb-1">Dual OTP Verification Required</h4>
+                  <p className="text-xs sm:text-sm text-blue-700 leading-relaxed">
+                    We'll verify both your Gmail and mobile number with OTP codes for maximum security.
+                  </p>
+                  <div className="flex items-center space-x-4 mt-2 text-xs text-blue-600">
+                    <div className="flex items-center space-x-1">
+                      <Shield className="w-3 h-3" />
+                      <span>Double Security</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Clock className="w-3 h-3" />
+                      <span>10 min validity</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleRegister} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <Label htmlFor="firstName" className="text-gray-700 font-medium text-sm">
+                    First Name *
+                  </Label>
+                  <Input
+                    id="firstName"
+                    name="firstName"
+                    value={formData.firstName}
+                    onChange={handleInputChange}
+                    placeholder="First name"
+                    required
+                    className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 h-11 sm:h-12"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="lastName" className="text-gray-700 font-medium text-sm">
+                    Last Name *
+                  </Label>
+                  <Input
+                    id="lastName"
+                    name="lastName"
+                    value={formData.lastName}
+                    onChange={handleInputChange}
+                    placeholder="Last name"
+                    required
+                    className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 h-11 sm:h-12"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="email" className="text-gray-700 font-medium text-sm">
+                  Gmail Address *
+                </Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  placeholder="Enter your Gmail address"
+                  required
+                  className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 h-11 sm:h-12"
+                />
+                <p className="text-xs text-gray-500 mt-1">We'll send the first OTP to this Gmail address</p>
+              </div>
+
+              <div>
+                <Label htmlFor="mobile" className="text-gray-700 font-medium text-sm">
+                  Mobile Number *
+                </Label>
+                <div className="relative mt-1">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                    <Phone className="w-4 h-4" />
+                  </div>
+                  <Input
+                    id="mobile"
+                    name="mobile"
+                    type="tel"
+                    value={formData.mobile}
+                    onChange={handleInputChange}
+                    placeholder="Enter 10-digit mobile number"
+                    required
+                    maxLength={10}
+                    className="pl-10 border-gray-300 focus:border-green-500 focus:ring-green-500 h-11 sm:h-12"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">We'll send the second OTP to this mobile number</p>
+              </div>
+
+              <div>
+                <Label htmlFor="password" className="text-gray-700 font-medium text-sm">
+                  Password *
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    placeholder="Create a password (min 6 characters)"
+                    required
+                    className="border-gray-300 focus:border-green-500 focus:ring-green-500 pr-12 h-11 sm:h-12"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="confirmPassword" className="text-gray-700 font-medium text-sm">
+                  Confirm Password *
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    placeholder="Confirm your password"
+                    required
+                    className="border-gray-300 focus:border-green-500 focus:ring-green-500 pr-12 h-11 sm:h-12"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium py-3 sm:py-4 rounded-lg transition-all transform hover:scale-[1.02] h-12 sm:h-14"
+                disabled={loading}
+              >
+                {loading ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Creating Account & Sending OTPs...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center space-x-2">
+                    <Mail className="w-4 h-4" />
+                    <Smartphone className="w-4 h-4" />
+                    <span>Create Account & Send OTPs</span>
+                  </div>
+                )}
+              </Button>
+            </form>
+          </div>
         )
 
       case "otp-verify":
         return (
-          <form onSubmit={handleOTPVerify} className="space-y-4">
+          <form onSubmit={handleOTPVerify} className="space-y-4 sm:space-y-6">
             <div className="text-center mb-6">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Mail className="w-10 h-10 text-green-600" />
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Mail className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
               </div>
-              <h3 className="text-xl font-semibold text-gray-800 mb-2">Verify Your Email</h3>
-              <p className="text-sm text-gray-600 mb-2">We've sent a 6-digit verification code to:</p>
-              <p className="text-sm font-medium text-green-600 bg-green-50 px-3 py-1 rounded-full inline-block">
-                {formData.email}
-              </p>
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-2">Step 1: Verify Your Gmail</h3>
+              <p className="text-sm text-gray-600 mb-3">We've sent a 6-digit verification code to:</p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <p className="text-sm font-medium text-blue-700 break-all">{formData.email}</p>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div className="flex items-center justify-center space-x-2 text-yellow-700">
+                  <Smartphone className="w-4 h-4" />
+                  <span className="text-sm font-medium">Mobile verification will follow</span>
+                </div>
+              </div>
             </div>
 
             <div>
               <Label htmlFor="otp" className="text-gray-700 font-medium text-sm">
-                Verification Code *
+                Gmail Verification Code *
               </Label>
               <Input
                 id="otp"
@@ -584,38 +775,46 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 placeholder="Enter 6-digit code"
                 required
                 maxLength={6}
-                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 text-center text-lg tracking-widest font-mono"
+                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 text-center text-lg sm:text-xl tracking-widest font-mono h-12 sm:h-14"
               />
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium py-3 rounded-lg transition-all transform hover:scale-[1.02]"
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium py-3 sm:py-4 rounded-lg transition-all transform hover:scale-[1.02] h-12 sm:h-14"
               disabled={loading}
             >
               {loading ? (
                 <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Verifying...</span>
+                  <span>Verifying Gmail...</span>
                 </div>
               ) : (
-                <span>Verify Email</span>
+                <div className="flex items-center justify-center space-x-2">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Verify Gmail & Continue</span>
+                </div>
               )}
             </Button>
 
-            <div className="text-center space-y-2">
+            <div className="text-center space-y-3">
               {otpTimer > 0 ? (
-                <p className="text-sm text-gray-500">
-                  Resend code in <span className="font-medium text-green-600">{otpTimer}s</span>
-                </p>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-sm text-gray-600">
+                    Resend code in <span className="font-medium text-blue-600">{otpTimer}s</span>
+                  </p>
+                </div>
               ) : (
                 <button
                   type="button"
                   onClick={handleResendOTP}
                   disabled={loading}
-                  className="text-green-600 hover:text-green-700 text-sm transition-colors font-medium"
+                  className="bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 text-sm transition-colors font-medium px-4 py-2 rounded-lg border border-blue-200"
                 >
-                  Resend Verification Code
+                  <div className="flex items-center space-x-2">
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Resend Gmail OTP</span>
+                  </div>
                 </button>
               )}
             </div>
@@ -623,7 +822,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
             <button
               type="button"
               onClick={() => setCurrentStep("register")}
-              className="flex items-center justify-center w-full text-gray-500 hover:text-gray-700 text-sm transition-colors"
+              className="flex items-center justify-center w-full text-gray-500 hover:text-gray-700 text-sm transition-colors py-2"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
               Back to Registration
@@ -631,20 +830,107 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
           </form>
         )
 
+      case "mobile-otp-verify":
+        return (
+          <form onSubmit={handleMobileOTPVerify} className="space-y-4 sm:space-y-6">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Smartphone className="w-8 h-8 sm:w-10 sm:h-10 text-green-600" />
+              </div>
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-2">Step 2: Verify Your Mobile</h3>
+              <p className="text-sm text-gray-600 mb-3">We've sent a 6-digit verification code to:</p>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                <p className="text-sm font-medium text-green-700">+91 {formData.mobile}</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex items-center justify-center space-x-2 text-blue-700">
+                  <CheckCircle className="w-4 h-4" />
+                  <span className="text-sm font-medium">Gmail verified successfully</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="mobileOtp" className="text-gray-700 font-medium text-sm">
+                Mobile Verification Code *
+              </Label>
+              <Input
+                id="mobileOtp"
+                name="mobileOtp"
+                value={formData.mobileOtp}
+                onChange={handleInputChange}
+                placeholder="Enter 6-digit code"
+                required
+                maxLength={6}
+                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 text-center text-lg sm:text-xl tracking-widest font-mono h-12 sm:h-14"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium py-3 sm:py-4 rounded-lg transition-all transform hover:scale-[1.02] h-12 sm:h-14"
+              disabled={loading}
+            >
+              {loading ? (
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Completing Registration...</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center space-x-2">
+                  <UserPlus className="w-4 h-4" />
+                  <span>Complete Registration</span>
+                </div>
+              )}
+            </Button>
+
+            <div className="text-center space-y-3">
+              {mobileOtpTimer > 0 ? (
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-sm text-gray-600">
+                    Resend code in <span className="font-medium text-green-600">{mobileOtpTimer}s</span>
+                  </p>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResendMobileOTP}
+                  disabled={loading}
+                  className="bg-green-50 hover:bg-green-100 text-green-600 hover:text-green-700 text-sm transition-colors font-medium px-4 py-2 rounded-lg border border-green-200"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Resend Mobile OTP</span>
+                  </div>
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCurrentStep("otp-verify")}
+              className="flex items-center justify-center w-full text-gray-500 hover:text-gray-700 text-sm transition-colors py-2"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back to Gmail Verification
+            </button>
+          </form>
+        )
+
       case "forgot-password":
         return (
-          <form onSubmit={handleForgotPassword} className="space-y-4">
+          <form onSubmit={handleForgotPassword} className="space-y-4 sm:space-y-6">
             <div className="text-center mb-6">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Lock className="w-10 h-10 text-blue-600" />
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Lock className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
               </div>
-              <h3 className="text-xl font-semibold text-gray-800 mb-2">Forgot Password?</h3>
-              <p className="text-sm text-gray-600">Enter your email address and we'll send you a reset code</p>
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-2">Forgot Password?</h3>
+              <p className="text-sm text-gray-600">Enter your Gmail address and we'll send you a reset code</p>
             </div>
 
             <div>
               <Label htmlFor="email" className="text-gray-700 font-medium text-sm">
-                Email Address *
+                Gmail Address *
               </Label>
               <Input
                 id="email"
@@ -652,31 +938,34 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 type="email"
                 value={formData.email}
                 onChange={handleInputChange}
-                placeholder="Enter your email"
+                placeholder="Enter your Gmail address"
                 required
-                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500"
+                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 h-11 sm:h-12"
               />
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium py-3 rounded-lg transition-all transform hover:scale-[1.02]"
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium py-3 sm:py-4 rounded-lg transition-all transform hover:scale-[1.02] h-12 sm:h-14"
               disabled={loading}
             >
               {loading ? (
                 <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Sending...</span>
+                  <span>Sending to Gmail...</span>
                 </div>
               ) : (
-                <span>Send Reset Code</span>
+                <div className="flex items-center justify-center space-x-2">
+                  <Mail className="w-4 h-4" />
+                  <span>Send Reset Code to Gmail</span>
+                </div>
               )}
             </Button>
 
             <button
               type="button"
               onClick={() => setCurrentStep("login")}
-              className="flex items-center justify-center w-full text-gray-500 hover:text-gray-700 text-sm transition-colors"
+              className="flex items-center justify-center w-full text-gray-500 hover:text-gray-700 text-sm transition-colors py-2"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
               Back to Login
@@ -686,21 +975,21 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
       case "reset-password":
         return (
-          <form onSubmit={handleResetPassword} className="space-y-4">
+          <form onSubmit={handleResetPassword} className="space-y-4 sm:space-y-6">
             <div className="text-center mb-6">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Lock className="w-10 h-10 text-blue-600" />
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Lock className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
               </div>
-              <h3 className="text-xl font-semibold text-gray-800 mb-2">Reset Password</h3>
-              <p className="text-sm text-gray-600 mb-2">Enter the code sent to:</p>
-              <p className="text-sm font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full inline-block">
-                {formData.email}
-              </p>
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-2">Reset Password</h3>
+              <p className="text-sm text-gray-600 mb-3">Enter the code sent to your Gmail:</p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm font-medium text-blue-700 break-all">{formData.email}</p>
+              </div>
             </div>
 
             <div>
               <Label htmlFor="otp" className="text-gray-700 font-medium text-sm">
-                Reset Code *
+                Gmail Reset Code *
               </Label>
               <Input
                 id="otp"
@@ -710,7 +999,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 placeholder="Enter 6-digit code"
                 required
                 maxLength={6}
-                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 text-center text-lg tracking-widest font-mono"
+                className="mt-1 border-gray-300 focus:border-green-500 focus:ring-green-500 text-center text-lg sm:text-xl tracking-widest font-mono h-12 sm:h-14"
               />
             </div>
 
@@ -727,12 +1016,12 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   onChange={handleInputChange}
                   placeholder="Enter new password (min 6 characters)"
                   required
-                  className="border-gray-300 focus:border-green-500 focus:ring-green-500 pr-10"
+                  className="border-gray-300 focus:border-green-500 focus:ring-green-500 pr-12 h-11 sm:h-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
                 >
                   {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -741,7 +1030,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium py-3 rounded-lg transition-all transform hover:scale-[1.02]"
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium py-3 sm:py-4 rounded-lg transition-all transform hover:scale-[1.02] h-12 sm:h-14"
               disabled={loading}
             >
               {loading ? (
@@ -750,23 +1039,31 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   <span>Resetting...</span>
                 </div>
               ) : (
-                <span>Reset Password</span>
+                <div className="flex items-center justify-center space-x-2">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Reset Password</span>
+                </div>
               )}
             </Button>
 
             <div className="text-center">
               {otpTimer > 0 ? (
-                <p className="text-sm text-gray-500">
-                  Resend code in <span className="font-medium text-blue-600">{otpTimer}s</span>
-                </p>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-sm text-gray-600">
+                    Resend code in <span className="font-medium text-blue-600">{otpTimer}s</span>
+                  </p>
+                </div>
               ) : (
                 <button
                   type="button"
                   onClick={handleResendOTP}
                   disabled={loading}
-                  className="text-blue-600 hover:text-blue-700 text-sm transition-colors font-medium"
+                  className="bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 text-sm transition-colors font-medium px-4 py-2 rounded-lg border border-blue-200"
                 >
-                  Resend Reset Code
+                  <div className="flex items-center space-x-2">
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Resend Code to Gmail</span>
+                  </div>
                 </button>
               )}
             </div>
@@ -774,7 +1071,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
             <button
               type="button"
               onClick={() => setCurrentStep("forgot-password")}
-              className="flex items-center justify-center w-full text-gray-500 hover:text-gray-700 text-sm transition-colors"
+              className="flex items-center justify-center w-full text-gray-500 hover:text-gray-700 text-sm transition-colors py-2"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
               Back
@@ -794,7 +1091,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
       case "register":
         return "Join Freshco"
       case "otp-verify":
-        return "Email Verification"
+        return "Gmail Verification"
+      case "mobile-otp-verify":
+        return "Mobile Verification"
       case "forgot-password":
         return "Reset Password"
       case "reset-password":
@@ -809,11 +1108,13 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
       case "login":
         return "Sign in to continue your healthy journey"
       case "register":
-        return "Create your account and start shopping"
+        return "Create your account with dual OTP verification"
       case "otp-verify":
-        return "Please verify your email to complete registration"
+        return "Step 1: Verify your Gmail address"
+      case "mobile-otp-verify":
+        return "Step 2: Verify your mobile number"
       case "forgot-password":
-        return "We'll help you reset your password"
+        return "We'll send a reset code to your Gmail"
       case "reset-password":
         return "Enter your new password"
       default:
@@ -823,16 +1124,16 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md max-w-[95vw] bg-white border-0 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md max-w-[95vw] bg-white border-0 shadow-xl p-0 max-h-[95vh] overflow-y-auto">
         {/* Header */}
-        <div className="text-center py-6 px-4 bg-gradient-to-r from-green-50 to-blue-50">
-          <div className="flex items-center justify-center space-x-2 mb-4">
-            <div className="relative w-20 h-12">
+        <div className="text-center py-4 sm:py-6 px-4 bg-gradient-to-r from-green-50 to-blue-50">
+          <div className="flex items-center justify-center space-x-2 mb-3 sm:mb-4">
+            <div className="relative w-16 h-8 sm:w-20 sm:h-12">
               <Image src="https://i.ibb.co/3mqR8CP4/logof.png" alt="Freshco Logo" fill className="object-contain" />
             </div>
           </div>
-          <h2 className="text-xl font-bold text-gray-800">{getTitle()}</h2>
-          <p className="text-sm text-gray-600 mt-1">{getDescription()}</p>
+          <h2 className="text-lg sm:text-xl font-bold text-gray-800">{getTitle()}</h2>
+          <p className="text-xs sm:text-sm text-gray-600 mt-1">{getDescription()}</p>
         </div>
 
         {/* Tab Navigation - Only show for login/register */}
@@ -840,7 +1141,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
           <div className="flex border-b mx-4">
             <button
               onClick={() => setCurrentStep("login")}
-              className={`flex-1 py-3 text-center font-medium transition-colors ${
+              className={`flex-1 py-3 text-center font-medium transition-colors text-sm sm:text-base ${
                 currentStep === "login"
                   ? "text-green-600 border-b-2 border-green-600"
                   : "text-gray-500 hover:text-gray-700"
@@ -850,7 +1151,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
             </button>
             <button
               onClick={() => setCurrentStep("register")}
-              className={`flex-1 py-3 text-center font-medium transition-colors ${
+              className={`flex-1 py-3 text-center font-medium transition-colors text-sm sm:text-base ${
                 currentStep === "register"
                   ? "text-green-600 border-b-2 border-green-600"
                   : "text-gray-500 hover:text-gray-700"
@@ -867,9 +1168,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
           {/* Demo Credentials - Only show on login */}
           {currentStep === "login" && (
-            <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+            <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
               <h4 className="font-medium text-blue-900 mb-2 text-sm">🎯 Demo Credentials</h4>
-              <p className="text-sm text-blue-700">
+              <p className="text-xs sm:text-sm text-blue-700">
                 <strong>Email:</strong> demo@freshco.com
                 <br />
                 <strong>Password:</strong> demo123
